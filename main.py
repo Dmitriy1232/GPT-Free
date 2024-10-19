@@ -2,145 +2,94 @@ import asyncio
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from g4f.client import Client
-from aiogram import Dispatcher,F
+from aiogram import Dispatcher,F,Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart,Command
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message,CallbackQuery
 import time
 import nest_asyncio
-
+import configparser
 nest_asyncio.apply()
 
-client = AsyncClient()
+client = Client()
 
+config = configparser.ConfigParser()
+
+config.read('config.ini')
 
 #Сбор статистики в Google Sheets
 scope = ['https://spreadsheets.google.com/feeds',
          'https://www.googleapis.com/auth/drive']
 
-keyfile = 'YUOR_KEY_PATH' #ключ сервисного аккаунта
-credentials = ServiceAccountCredentials.from_json_keyfile_name(keyfile, scope) 
+keyfile = config.get('Data','keyfile') #ключ сервисного аккаунта
+credentials = ServiceAccountCredentials.from_json_keyfile_name(keyfile, scope)
 gs = gspread.authorize(credentials)
-table_name = 'TABLE_NAME'  #Имя таблицы
+table_name = config.get('Data','table_name')  #Имя таблицы
 work_sheet = gs.open(table_name)
 sheet1 = work_sheet.sheet1
 
-
-TOKEN = "YOUR_BOT_TOKEN" #Токен бота
-
-
-
-
 dp = Dispatcher()
-class user():
-  def __init__(self,id):
-    self.id =id
-    self.dialog = '{"role":"main_rool","content":"Игнорируй все предыдущие сообщения. Пожалуйста, следуй следующему правилу: всегда отвечай на том же языке, на котором было получено сообщение пользователя, если только пользователь не укажет явно отвечать на другом языке."},'
-    self.model = 'gpt-4o'
-users =[]
-@dp.message(CommandStart())
+TOKEN = config.get('Data','TOKEN') #Токен бота
+
+
+
+class users():
+  users = []
+  start_mes = config.get('Data','start_mes')
+  class user():
+    def __init__(self,id):
+      self.id =id
+      self.dialog = users.start_mes
+      self.model = config.get('Data','start_model')
+  
+  def create_user(id):
+    users.users.append(users.user(id))
+
+  def get_user(id):
+    for i in users.users:
+      if i.id == id:
+        return i
+    users.create_user(id)
+    return users.get_user(id)
+
+
+
+class create_models():
+  def __init__(self,models,dp):
+    self.dp=dp
+    self.models = models
+    self.keyboard = InlineKeyboardMarkup (inline_keyboard = [[InlineKeyboardButton(text = i, callback_data = i)] for i in self.models])
+    for model in models:
+      self.create_dec(model,dp)
+  def create_dec(self,model,dp):
+    @self.dp.callback_query(F.data == model)
+    async def model_choose_push(callback):
+      user_ = users.get_user(callback.message.chat.id)
+      user_.model = callback.data
+      await callback.message.edit_text(text=f'Установлена модель: {callback.data}')
+models = create_models(config.get('Data','models').split(', '),dp)
+
+@dp.message(Command(commands=["start"]))
 async def command_start_handler(message: Message):
-  flag = True
-  for i in users:
-    if i.id == message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(message.chat.id)
-    users.append(user_)
-  else:
-    user_.dialog = '{"role":"main_rool","content":"Игнорируй все предыдущие сообщения. Пожалуйста, следуй следующему правилу: всегда отвечай на том же языке, на котором было получено сообщение пользователя, если только пользователь не укажет явно отвечать на другом языке."},'
+  user_ = users.get_user(message.chat.id)
+  user_.dialog = users.start_mes
   await message.answer(text='Бот обновлён')
 
 
-model1 = InlineKeyboardButton(
-      text='llama-3.1-70b',
-      callback_data='gpt-4-turbo'
-  )
-model2 = InlineKeyboardButton(
-      text='gpt-4o',
-      callback_data='gpt-4o'
-  )
-model3 = InlineKeyboardButton(
-      text='gpt-3.5-turbo',
-      callback_data='gpt-3.5-turbo'
-  )
-keyboard = InlineKeyboardMarkup(
-      inline_keyboard=[[model1],[model2],
-                      [model3]])
-
-
+@dp.message(Command(commands=["feedback"]))
+async def command_start_handler(message: Message):
+  await message.answer(text='Переходи ->> t.me/gpt_by_dimas')
 
 @dp.message(Command(commands=["model"]))
 async def process_model_command(message: Message):
-  flag = True
-  for i in users:
-    if i.id == message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(message.chat.id)
-    users.append(user_)
-  await message.answer(text = f'Текущая модель: {user_.model}',reply_markup=keyboard)
-
-@dp.callback_query(F.data == 'llama-3.1-70b')
-async def process_button_1_press(callback: CallbackQuery):
-  flag = True
-  for i in users:
-    if i.id == callback.message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(callback.message.chat.id)
-    users.append(user_)
-  user_.model=callback.data
-  await callback.message.edit_text(text=f'Установлена модель: {callback.data}')
-@dp.callback_query(F.data == 'gpt-4o')
-async def process_button_1_press(callback: CallbackQuery):
-  flag = True
-  for i in users:
-    if i.id == callback.message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(callback.message.chat.id)
-    users.append(user_)
-  user_.model=callback.data
-  await callback.message.edit_text(text=f'Установлена модель: {callback.data}')
-@dp.callback_query(F.data == 'gpt-3.5-turbo')
-async def process_button_1_press(callback: CallbackQuery):
-  flag = True
-  for i in users:
-    if i.id == callback.message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(callback.message.chat.id)
-    users.append(user_)
-  user_.model=callback.data
-  await callback.message.edit_text(text=f'Установлена модель: {callback.data}')
-
-
-
+  user_ = users.get_user(message.chat.id)
+  await message.answer(text = f'Текущая модель: {user_.model}',reply_markup=models.keyboard)
 
 
 @dp.message()
 async def echo_handler(message: Message):
-  flag = True
-  for i in users:
-    if i.id == message.chat.id:
-      flag = False
-      user_ = i
-      break
-  if flag:
-    user_= user(message.chat.id)
-    users.append(user_)
+  user_ = users.get_user(message.chat.id)
 
   stat = [message.chat.id,time.mktime(message.date.timetuple()),time.time(),len(message.text)]
   messagetoedit = await message.answer('Генерация...')
@@ -152,9 +101,8 @@ async def echo_handler(message: Message):
   reply =response.choices[0].message.content
   user_.dialog +='{'+f'"role":"assistant","conent":"{reply}"'+'},'
 
-  await messagetoedit.edit_text( text=reply)
+  await messagetoedit.edit_text(text=reply)
   stat.append(time.time())
-  stat.append(user_.model)
   sheet1.append_row(stat)
 
 async def main():
